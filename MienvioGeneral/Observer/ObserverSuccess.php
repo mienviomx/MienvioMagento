@@ -1,4 +1,5 @@
 <?php
+
 namespace MienvioMagento\MienvioGeneral\Observer;
 
 use Magento\Framework\Event\Observer;
@@ -12,13 +13,13 @@ class ObserverSuccess implements ObserverInterface
 {
     private $collectionFactory;
     private $quoteRepository;
-    const XML_PATH_Street_store = 'shipping/origin/street_line2';
+    public const XML_PATH_Street_store = 'shipping/origin/street_line2';
 
     /**
      * Defines if quote endpoint will be used at rates
      * @var boolean
      */
-    const IS_QUOTE_ENDPOINT_ACTIVE = true;
+    public const IS_QUOTE_ENDPOINT_ACTIVE = true;
 
     protected $_storeManager;
 
@@ -326,11 +327,16 @@ class ObserverSuccess implements ObserverInterface
         $itemsArr = [];
 
         foreach ($items as $item) {
+            if ($item->getParentItem()) {
+                continue;
+            }
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $productName = $item->getName();
+            $productSku = $item->getSku();
             $orderDescription .= $productName . ' ';
-            $product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
-            $this->_logger->debug('Items PREUBA 22 FEBRERO', ['PRODUCTO' => $product]);
+            //$product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            $productRepository = $objectManager->get('\Magento\Catalog\Model\ProductRepository');
+            $product = $productRepository->get($productSku);
             $dimensions = $this->getDimensionItems($product);
 
             if (is_array($dimensions)) {
@@ -342,7 +348,7 @@ class ObserverSuccess implements ObserverInterface
                 $length = 2;
                 $width  = 2;
                 $height = 2;
-                $weight = 0.5;
+                $weight = 1;
             }
 
             $orderLength += $length;
@@ -351,9 +357,8 @@ class ObserverSuccess implements ObserverInterface
 
             $volWeight = $this->calculateVolumetricWeight($length, $width, $height);
             $packageVolWeight += $volWeight;
-
             $itemsArr[] = [
-                'id' => $item->getSku(),
+                'id' => $productSku,
                 'name' => $productName,
                 'length' => $length,
                 'width' => $width,
@@ -587,11 +592,6 @@ class ObserverSuccess implements ObserverInterface
         ];
 
         $location = $this->_mienvioHelper->getLocation();
-        $this->_logger->debug('LOCATION: '.$location);
-        $this->_logger->debug('STREET2: '.$street2);
-        $this->_logger->debug('DestRegion: '.$destRegion);
-        $this->_logger->debug('DestRegionCode: '.$destRegionCode);
-        $this->_logger->debug('DesCity: '.$destCity);
 
         if ($location == 'street2') {
             if ($countryCode === 'MX') {

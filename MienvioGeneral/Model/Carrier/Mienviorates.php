@@ -1,4 +1,5 @@
 <?php
+
 namespace MienvioMagento\MienvioGeneral\Model\Carrier;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -20,13 +21,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
     private $directoryHelper;
     private $quoteRepository;
 
-    const LEVEL_1_COUNTRIES = ['PE', 'CL','CO','GT'];
+    public const LEVEL_1_COUNTRIES = ['PE', 'CL','CO','GT'];
 
     /**
      * Defines if quote endpoint will be used at rates
      * @var boolean
      */
-    const IS_QUOTE_ENDPOINT_ACTIVE = true;
+    public const IS_QUOTE_ENDPOINT_ACTIVE = true;
 
     protected $_storeManager;
 
@@ -109,8 +110,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      */
     private function processFullAddress($fullStreet)
     {
-        $this->_logger->debug('ProcessFullAddress', ['FullAddress' => $fullStreet]);
-
         $response = [
             'street' => '.',
             'suburb' => '.'
@@ -154,12 +153,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $cart = $objectManager->get('\Magento\Checkout\Model\Cart');
         $shippingAddress = $cart->getQuote()->getShippingAddress();
-
         $freeShippingSet = $shippingAddress->getFreeShipping();
 
-
-
-        $shippingAddress = $cart->getQuote()->getShippingAddress();
         $rateResponse = $this->_rateResultFactory->create();
         $apiKey = $this->_mienvioHelper->getMienvioApi();
         if ($apiKey == null) {
@@ -175,9 +170,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         /*
          * Section to grab the filter_list field
          * Expected value | string
-         * Example value    | "DA8H,ZA8H"
+         * Example value  | "DA8H,ZA8H"
          */
-
         $filterList = '';
 
         $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
@@ -185,10 +179,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $logger->addWriter($writer);
         $this->_logger = $logger;
 
-
-
         try {
-            /* ADDRESS CREATION */
             $destCountryId  = $request->getDestCountryId();
             $destCountry    = $request->getDestCountry();
             $destRegion     = $request->getDestRegionId();
@@ -197,14 +188,21 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $fullAddressProcessed = $this->processFullAddress($destFullStreet);
             $destCity       = $request->getDestCity();
             $destPostcode   = $request->getDestPostcode();
+            $customerName  = trim($shippingAddress->getName());
+            $customerEmail  = trim($shippingAddress->getEmail());
+            $customerPhone = trim($shippingAddress->getTelephone());
+            $storeName = trim($this->_mienvioHelper->getStoreName());
+            $storePhone = trim($this->_mienvioHelper->getStorePhone());
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+
             $fromData = $this->createAddressDataStr(
                 'from',
-                "MIENVIO DE MEXICO",
+                empty($storeName) ? "MIENVIO DE MEXICO" : $storeName,
                 $this->_mienvioHelper->getOriginStreet(),
                 $this->_mienvioHelper->getOriginStreet2(),
                 $this->_mienvioHelper->getOriginZipCode(),
-                "ventas@mienvio.mx",
-                "5551814040",
+                empty($storeEmail) ? "ventas@mienvio.mx" : $storeEmail,
+                empty($storePhone) ? "5551814040" : $storePhone,
                 '',
                 $destCountryId,
                 $this->_mienvioHelper->getOriginCity()
@@ -212,12 +210,12 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
 
             $toData = $this->createAddressDataStr(
                 'to',
-                'usuario temporal',
-                'calle temporal',
-                $fullAddressProcessed['suburb'],
+                empty($customerName) ? 'Usuario temporal' : $customerName,
+                $fullAddressProcessed['street'] === '.' ? 'Dirección de linea 1' : $fullAddressProcessed['street'],
+                $fullAddressProcessed['suburb'] === '.' ? 'Dirección de linea 2' : $fullAddressProcessed['suburb'],
                 $destPostcode,
-                "ventas@mienvio.mx",
-                "5551814040",
+                empty($customerEmail) ? 'ventas@mienvio.mx' : $customerEmail,
+                empty($customerPhone) ? '5551814040' : $customerPhone,
                 $fullAddressProcessed['suburb'],
                 $destCountryId,
                 $destRegion,
@@ -225,19 +223,33 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $destCity
             );
 
-
-            $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
+            $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
-            $this->_logger->debug('URL MIENVIO CREATE ADDRESS', ['url' => $createAddressUrl]);
+
+            $this->_logger->debug('Mienviorates@collectRates :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('Mienviorates@collectRates :: create address FROM request: ' . json_encode($fromData));
+
             $this->_curl->post($createAddressUrl, json_encode($fromData));
             $addressFromResp = json_decode($this->_curl->getBody());
-            $this->_logger->debug($this->_curl->getBody());
-            $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+
+            try {
+                $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in Mienviorates@collectRates :: create address FROM response: ' . $this->_curl->getBody());
+                return;
+            }
+
+            $this->_logger->debug('Mienviorates@collectRates :: create address TO request: ' . json_encode($toData));
 
             $this->_curl->post($createAddressUrl, json_encode($toData));
             $addressToResp = json_decode($this->_curl->getBody());
-            $this->_logger->debug($this->_curl->getBody());
-            $addressToId = $addressToResp->{'address'}->{'object_id'};
+
+            try {
+                $addressToId = $addressToResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in Mienviorates@collectRates :: create address TO response: ' . $this->_curl->getBody());
+                return;
+            }
 
             $itemsMeasures = $this->getOrderDefaultMeasures($request->getAllItems());
             $packageWeight = $this->convertWeight($request->getPackageWeight());
@@ -262,14 +274,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 );
             }
 
-
             foreach ($rates as $rate) {
-                $this->_logger->debug('rate_id');
                 $methodId = $this->parseReverseServiceLevel($rate['servicelevel']) . '-' . $rate['courier'];
-                $this->_logger->debug((string)$methodId);
-                $this->_logger->debug(strval($rate['id']));
-                $this->_logger->debug(serialize($rate));
-
                 $method = $this->_rateMethodFactory->create();
                 $method->setCarrier($this->getCarrierCode());
                 $method->setCarrierTitle($rate['courier']);
@@ -319,11 +325,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'source_type' => 'magento',
         ];
 
-        $this->_logger->debug('Creating quote (mienviorates)', ['request' => json_encode($quoteReqData)]);
-        $this->_logger->debug('URL MIENVIO', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote request ' . json_encode($quoteReqData));
+
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
         $quoteResponse = json_decode($this->_curl->getBody());
-        $this->_logger->debug('Creating quote (mienviorates)', ['response' => $this->_curl->getBody()]);
+
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote response ' . json_encode($quoteResponse));
 
         if (isset($quoteResponse->{'rates'})) {
             $rates = [];
@@ -611,12 +619,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         ];
 
         $location = $this->_mienvioHelper->getLocation();
-        $this->_logger->debug('LOCATION: '.$location);
-        $this->_logger->debug('Country: '.$countryCode);
-        $this->_logger->debug('STREET2: '.$street2);
-        $this->_logger->debug('DestRegion: '.$destRegion);
-        $this->_logger->debug('DestRegionCode: '.$destRegionCode);
-        $this->_logger->debug('DesCity: '.$destCity);
 
         if ($location == 'street2') {
             if ($countryCode === 'MX') {
@@ -654,7 +656,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $data['level_2'] = $this->getLevel2FromAddress($destRegion, $destRegionCode, $destCity);
             }
         }
-        $this->_logger->debug('DATA COMPLETE: '.serialize($data));
+
         return $data;
     }
 
@@ -704,10 +706,16 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $itemsArr = [];
 
         foreach ($items as $item) {
+            if ($item->getParentItem()) {
+                continue;
+            }
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $productName = $item->getName();
+            $productSku = $item->getSku();
             $orderDescription .= $productName . ' ';
-            $product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            //$product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            $productRepository = $objectManager->get('\Magento\Catalog\Model\ProductRepository');
+            $product = $productRepository->get($productSku);
             $dimensions = $this->getDimensionItems($product);
 
             if (is_array($dimensions)) {
@@ -722,7 +730,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $weight = 1;
             }
 
-
             $orderLength += $length;
             $orderWidth  += $width;
             $orderHeight += $height;
@@ -730,7 +737,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $volWeight = $this->calculateVolumetricWeight($length, $width, $height);
             $packageVolWeight += $volWeight;
             $itemsArr[] = [
-                'id' => $item->getId(),
+                'id' => $productSku,
                 'name' => $productName,
                 'length' => $length,
                 'width' => $width,
@@ -841,7 +848,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $width = 0.5;
             $height = 0.5;
             $weight = 0.2;
-            $this->_logger->debug('This item will be trated as a kit with measures in 0.', ['item info' => serialize($product->getData())]);
+            $this->_logger->debug('This item will be trated as a kit with measures in 0 ' . json_encode($product->getData()));
         }
         return array(
             'length' => $length,
