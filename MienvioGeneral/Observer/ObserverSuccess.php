@@ -52,6 +52,10 @@ class ObserverSuccess implements ObserverInterface
         $chosenServicelevel = '';
         $chosenProvider = '';
 
+        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
+        $logger = new \Zend_Log();
+        $logger->addWriter($writer);
+        $this->_logger = $logger;
 
         $dataOrder = $order->getData();
         $order_quote_id = $dataOrder['quote_id'];
@@ -128,24 +132,22 @@ class ObserverSuccess implements ObserverInterface
             $countryId = $shippingAddress->getCountryId();
             $destRegion     = $shippingAddress->getRegion();
             $destRegionCode = $shippingAddress->getRegionCode();
+            $storeName = trim($this->_mienvioHelper->getStoreName());
+            $storePhone = trim($this->_mienvioHelper->getStorePhone());
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
 
             if ($shippingAddress === null) {
                 return $this;
             }
 
-            $this->_logger->info("Shipping address", ["data" => $shippingAddress->getData()]);
-            $this->_logger->info("order", ["data" => $order->getData()]);
-            $this->_logger->info("quoteId", ["data" => $quoteId]);
-            $this->_logger->info("shippingid", ["data" => $shipping_id]);
-
             $fromData = $this->createAddressDataStr(
                 'from',
-                "MIENVIO DE MEXICO",
+                empty($storeName) ? "MIENVIO DE MEXICO" : $storeName,
                 $this->_mienvioHelper->getOriginStreet(),
                 $this->_mienvioHelper->getOriginStreet2(),
                 $this->_mienvioHelper->getOriginZipCode(),
-                "ventas@mienvio.mx",
-                "4422876138",
+                empty($storeEmail) ? "ventas@mienvio.mx" : $storeEmail,
+                empty($storePhone) ? "5551814040" : $storePhone,
                 '',
                 $countryId,
                 $this->_mienvioHelper->getOriginCity()
@@ -173,20 +175,33 @@ class ObserverSuccess implements ObserverInterface
                 $shippingAddress->getCity()
             );
 
-            $this->_logger->info("Addresses data", ["to" => $toData, "from" => $fromData]);
-
-            $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
+            $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
+
+            $this->_logger->debug('ObserverSuccess@execute :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('ObserverSuccess@execute :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
             $addressFromResp = json_decode($this->_curl->getBody());
-            $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+
+            try {
+                $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: create address FROM response: ' . $this->_curl->getBody());
+                return;
+            }
+
+            $this->_logger->debug('ObserverSuccess@execute :: create address TO request: ' . json_encode($toData));
 
             $this->_curl->post($createAddressUrl, json_encode($toData));
             $addressToResp = json_decode($this->_curl->getBody());
-            $addressToId = $addressToResp->{'address'}->{'object_id'};
 
-            $this->_logger->info("responses", ["to" => $addressToId, "from" => $addressFromId]);
+            try {
+                $addressToId = $addressToResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: create address TO response: ' . $this->_curl->getBody());
+                return;
+            }
 
             /* Measures */
             $itemsMeasures = $this->getOrderDefaultMeasures($order->getAllVisibleItems());
@@ -203,7 +218,6 @@ class ObserverSuccess implements ObserverInterface
                     $order->getIncrementId()
                 );
                 $mienvioQuoteId = $mienvioResponse['quote_id'];
-                $this->_logger->info("QUOTEid", ["data" => $mienvioQuoteId]);
                 $order->setMienvioQuoteId($mienvioQuoteId);
                 $order->save();
                 return $this;
@@ -303,12 +317,15 @@ class ObserverSuccess implements ObserverInterface
             'source_type' => 'magento'
         ];
 
-        $this->_logger->debug('Creating quote (ObserverSuccess)'.$createQuoteUrl, ['request' => json_encode($quoteReqData)]);
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote request ' . json_encode($quoteReqData));
+
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
-        $quoteResponse = $this->_curl->getBody();
-        $res = json_decode(stripslashes($quoteResponse), true);
-        $this->_logger->debug('Creating quote (ObserverSuccess)', ['response' => $res]);
-        return $res;
+        $quoteResponse = json_decode(stripslashes($this->_curl->getBody()), true);
+
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote response ' . json_encode($quoteResponse));
+
+        return $quoteResponse;
     }
 
     /**
@@ -630,8 +647,6 @@ class ObserverSuccess implements ObserverInterface
             }
         }
 
-
-        $this->_logger->info("createAddressDataStr", ["data" => $data]);
         return $data;
     }
 
@@ -740,8 +755,6 @@ class ObserverSuccess implements ObserverInterface
                 '',
                 $shippingAddress->getCity()
             );
-
-            $this->_logger->info("Addresses data", ["to" => $toData, "from" => $fromData]);
 
             $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
