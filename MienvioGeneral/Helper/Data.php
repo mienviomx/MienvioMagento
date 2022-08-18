@@ -22,6 +22,10 @@ class Data extends AbstractHelper
     public const XML_PATH_Street2_store = 'shipping/origin/street_line2';
     public const XML_PATH_ZipCode_store = 'shipping/origin/postcode';
     public const XML_PATH_city_store = 'shipping/origin/city';
+    public const XML_PATH_store_name = 'general/store_information/name';
+    public const XML_PATH_store_phone = 'general/store_information/phone';
+    public const XML_PATH_store_general_email = 'trans_email/ident_general/email';
+
     public function getConfigValue($field, $storeId = null)
     {
         return $this->scopeConfig->getValue(
@@ -34,6 +38,21 @@ class Data extends AbstractHelper
     public function getGeneralConfig($code, $storeId = null)
     {
         return $this->getConfigValue(self::XML_PATH_GENERAL .'general/'. $code, $storeId);
+    }
+
+    public function getStoreName($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_name, $storeId);
+    }
+
+    public function getStorePhone($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_phone, $storeId);
+    }
+
+    public function getStoreEmail($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_general_email, $storeId);
     }
 
     public function isMienvioActive($storeId = null)
