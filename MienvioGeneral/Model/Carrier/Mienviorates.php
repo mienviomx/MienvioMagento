@@ -56,93 +56,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
     }
 
     /**
-     * Retrieve allowed methods
-     *
-     * @return string
-     */
-    public function getAllowedMethods()
-    {
-        return [
-            $this->getCarrierCode() => __($this->getConfigData('name'))
-        ];
-    }
-
-    /**
-     * Checks if mienvio's configuration is ready
-     *
-     * @return boolean
-     */
-    private function checkIfMienvioEnvIsSet()
-    {
-        $isActive = $this->_mienvioHelper->isMienvioActive();
-        $apiKey = $this->_mienvioHelper->getMienvioApi();
-        $apiSource = $this->getConfigData('apikey');
-
-        if (!$isActive) {
-            return false;
-        }
-
-        if ($apiKey == "" || $apiSource == "NA") {
-            return false;
-        }
-    }
-
-    /**
-     * Checks if mienvio's configuration is ready
-     *
-     * @return boolean
-     */
-    private function checkIfIsFreeShipping()
-    {
-        $isActive = $this->_mienvioHelper->isFreeShipping();
-        if (!$isActive) {
-            return false;
-        } else {
-            return true;
-        }
-    }
-
-    /**
-     * Process full street string and retrieves street and suburb
-     *
-     * @param  string $fullStreet
-     * @return array
-     */
-    private function processFullAddress($fullStreet)
-    {
-        $response = [
-            'street' => '.',
-            'suburb' => '.'
-        ];
-
-        if ($fullStreet != null && $fullStreet != "") {
-            $fullStreetArray = explode("\n", $fullStreet);
-            $count = count($fullStreetArray);
-
-            if ($count > 0 && $fullStreetArray[0] !== false) {
-                if ($count > 1) {
-                    $response['street'] = $fullStreetArray[0];
-                }
-            }
-
-            if ($count > 1 && $fullStreetArray[1] !== false) {
-                $response['suburb'] = $fullStreetArray[1];
-            }
-
-            /*
-             * Caso para cuando solamente viene una sola linea de Direccion,
-             * es decir la dirección Street uno, no es colocalda por el usuario.
-             */
-
-            if ($count === 1) {
-                $response['suburb'] = $fullStreetArray[0];
-            }
-        }
-
-        return $response;
-    }
-
-    /**
      * Retrieve rates for given shipping request
      *
      * @param  RateRequest $request
@@ -150,10 +63,14 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      */
     public function collectRates(RateRequest $request)
     {
+        $this->initLogger();
+
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $cart = $objectManager->get('\Magento\Checkout\Model\Cart');
         $shippingAddress = $cart->getQuote()->getShippingAddress();
         $freeShippingSet = $shippingAddress->getFreeShipping();
+
+        $this->_logger->debug('Mienviorates@collectRates :: free shipping for shipping address', ['value' => $freeShippingSet]);
 
         $rateResponse = $this->_rateResultFactory->create();
         $apiKey = $this->_mienvioHelper->getMienvioApi();
@@ -174,11 +91,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
          */
         $filterList = '';
 
-        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
-        $logger = new \Zend_Log();
-        $logger->addWriter($writer);
-        $this->_logger = $logger;
-
         try {
             $destCountryId  = $request->getDestCountryId();
             $destCountry    = $request->getDestCountry();
@@ -194,6 +106,11 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $storeName = trim($this->_mienvioHelper->getStoreName());
             $storePhone = trim($this->_mienvioHelper->getStorePhone());
             $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+
+            if (empty($destPostcode) || empty($destCountryId) || empty($destCity) || empty($fullAddressProcessed['street']) || empty($fullAddressProcessed['suburb'])) {
+                $this->_logger->debug("Mienviorates@collectRates :: empty required address fields are present, ignoring");
+                return;
+            }
 
             $fromData = $this->createAddressDataStr(
                 'from',
@@ -211,12 +128,12 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $toData = $this->createAddressDataStr(
                 'to',
                 empty($customerName) ? 'Usuario temporal' : $customerName,
-                $fullAddressProcessed['street'] === '.' ? 'Dirección de linea 1' : $fullAddressProcessed['street'],
-                $fullAddressProcessed['suburb'] === '.' ? 'Dirección de linea 2' : $fullAddressProcessed['suburb'],
+                empty($fullAddressProcessed['street']) ? 'Dirección de linea 1' : $fullAddressProcessed['street'],
+                empty($fullAddressProcessed['suburb']) ? 'Dirección de linea 2' : $fullAddressProcessed['suburb'],
                 $destPostcode,
                 empty($customerEmail) ? 'ventas@mienvio.mx' : $customerEmail,
                 empty($customerPhone) ? '5551814040' : $customerPhone,
-                $fullAddressProcessed['suburb'],
+                $fullAddressProcessed['ref'],
                 $destCountryId,
                 $destRegion,
                 $destRegionCode,
@@ -306,6 +223,105 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
     }
 
     /**
+     * Retrieve allowed methods
+     *
+     * @return string
+     */
+    public function getAllowedMethods()
+    {
+        return [
+            $this->getCarrierCode() => __($this->getConfigData('name'))
+        ];
+    }
+
+    /**
+     * Checks if mienvio's configuration is ready
+     *
+     * @return boolean
+     */
+    private function checkIfMienvioEnvIsSet()
+    {
+        $isActive = $this->_mienvioHelper->isMienvioActive();
+        $apiKey = $this->_mienvioHelper->getMienvioApi();
+        $apiSource = $this->getConfigData('apikey');
+
+        if (!$isActive) {
+            return false;
+        }
+
+        if ($apiKey == "" || $apiSource == "NA") {
+            return false;
+        }
+    }
+
+    /**
+     * Checks if mienvio's configuration is ready
+     *
+     * @return boolean
+     */
+    private function checkIfIsFreeShipping()
+    {
+        $isActive = $this->_mienvioHelper->isFreeShipping();
+        if (!$isActive) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * Process full street string and retrieves street and suburb
+     *
+     * @param  string $fullStreet
+     * @return array
+     */
+    private function processFullAddress($fullStreet)
+    {
+        $response = [
+            'street' => '',
+            'suburb' => '',
+            'ref' => ''
+        ];
+
+        if ($fullStreet != null && $fullStreet != "") {
+            // $fullStreetArray = explode("\n", $fullStreet);
+            // $count = count($fullStreetArray);
+
+            // if ($count > 0 && $fullStreetArray[0] !== false) {
+            //     if ($count > 1) {
+            //         $response['street'] = $fullStreetArray[0];
+            //     }
+            // }
+
+            // if ($count > 1 && $fullStreetArray[1] !== false) {
+            //     $response['suburb'] = $fullStreetArray[1];
+            // }
+
+            // /*
+            //  * Caso para cuando solamente viene una sola linea de Direccion,
+            //  * es decir la dirección Street uno, no es colocalda por el usuario.
+            //  */
+
+            // if ($count === 1) {
+            //     $response['suburb'] = $fullStreetArray[0];
+            // }
+            $fullStreetArray = explode("\n", $fullStreet);
+
+            if (isset($fullStreetArray[0])) {
+                $response['street'] = $fullStreetArray[0];
+            }
+            if (isset($fullStreetArray[1])) {
+                $response['suburb'] = $fullStreetArray[1];
+            }
+            if (isset($fullStreetArray[2])) {
+                $response['ref'] = $fullStreetArray[2];
+            }
+        }
+
+        return $response;
+    }
+
+    /**
      * Quotes shipment using the quote endpoint
      *
      * @param  array $items
@@ -316,6 +332,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      */
     private function quoteShipmentViaQuoteEndpoint($items, $addressFromId, $addressToId, $createQuoteUrl, $filterList = null)
     {
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: about to create quote shipment');
+
         $quoteReqData = [
             'items'         => $items,
             'address_from'  => $addressFromId,
@@ -968,5 +986,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'package' => $chosenPackage,
             'qty' => $qty
         ];
+    }
+
+    private function initLogger()
+    {
+        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
+        $logger = new \Zend_Log();
+        $logger->addWriter($writer);
+        $this->_logger = $logger;
     }
 }
