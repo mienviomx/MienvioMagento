@@ -1,4 +1,5 @@
 <?php
+
 namespace MienvioMagento\MienvioGeneral\Model\Carrier;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -20,13 +21,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
     private $directoryHelper;
     private $quoteRepository;
 
-    const LEVEL_1_COUNTRIES = ['PE', 'CL','CO','GT'];
+    public const LEVEL_1_COUNTRIES = ['PE', 'CL','CO','GT'];
 
     /**
      * Defines if quote endpoint will be used at rates
      * @var boolean
      */
-    const IS_QUOTE_ENDPOINT_ACTIVE = true;
+    public const IS_QUOTE_ENDPOINT_ACTIVE = true;
 
     protected $_storeManager;
 
@@ -52,6 +53,173 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $this->_mienvioHelper = $helperData;
         $this->directoryHelper = $directoryHelper;
         parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+    }
+
+    /**
+     * Retrieve rates for given shipping request
+     *
+     * @param  RateRequest $request
+     * @return [type]               [description]
+     */
+    public function collectRates(RateRequest $request)
+    {
+        $this->initLogger();
+
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $cart = $objectManager->get('\Magento\Checkout\Model\Cart');
+        $shippingAddress = $cart->getQuote()->getShippingAddress();
+        $freeShippingSet = $shippingAddress->getFreeShipping();
+
+        $this->_logger->debug('Mienviorates@collectRates :: free shipping for shipping address', ['value' => $freeShippingSet]);
+
+        $rateResponse = $this->_rateResultFactory->create();
+        $apiKey = $this->_mienvioHelper->getMienvioApi();
+        if ($apiKey == null) {
+            $apiKey = $this->_mienvioHelper->getMienvioApiRedundant();
+        }
+        $baseUrl =  $this->_mienvioHelper->getEnvironment();
+        $createShipmentUrl  = $baseUrl . 'api/shipments';
+        $quoteShipmentUrl   = $baseUrl . 'api/shipments/$shipmentId/rates';
+        $getPackagesUrl     = $baseUrl . 'api/packages';
+        $createAddressUrl   = $baseUrl . 'api/addresses';
+        $createQuoteUrl     = $baseUrl . 'api/quotes';
+
+        /*
+         * Section to grab the filter_list field
+         * Expected value | string
+         * Example value  | "DA8H,ZA8H"
+         */
+        $filterList = '';
+
+        try {
+            $destCountryId  = $request->getDestCountryId();
+            $destCountry    = $request->getDestCountry();
+            $destRegion     = $request->getDestRegionId();
+            $destRegionCode = $request->getDestRegionCode();
+            $destFullStreet = $request->getDestStreet();
+            $fullAddressProcessed = $this->processFullAddress($destFullStreet);
+            $destCity       = $request->getDestCity();
+            $destPostcode   = $request->getDestPostcode();
+            $customerName  = trim($shippingAddress->getName());
+            $customerEmail  = trim($shippingAddress->getEmail());
+            $customerPhone = trim($shippingAddress->getTelephone());
+            $storeName = trim($this->_mienvioHelper->getStoreName());
+            $storePhone = trim($this->_mienvioHelper->getStorePhone());
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+
+            if (empty($destPostcode) || empty($destCountryId) || empty($destCity) || empty($fullAddressProcessed['street']) || empty($fullAddressProcessed['suburb'])) {
+                $this->_logger->debug("Mienviorates@collectRates :: empty required address fields are present, ignoring");
+                return;
+            }
+
+            $fromData = $this->createAddressDataStr(
+                'from',
+                empty($storeName) ? "MIENVIO DE MEXICO" : $storeName,
+                $this->_mienvioHelper->getOriginStreet(),
+                $this->_mienvioHelper->getOriginStreet2(),
+                $this->_mienvioHelper->getOriginZipCode(),
+                empty($storeEmail) ? "ventas@mienvio.mx" : $storeEmail,
+                empty($storePhone) ? "5551814040" : $storePhone,
+                '',
+                $destCountryId,
+                $this->_mienvioHelper->getOriginCity()
+            );
+
+            $toData = $this->createAddressDataStr(
+                'to',
+                empty($customerName) ? 'Usuario temporal' : $customerName,
+                empty($fullAddressProcessed['street']) ? 'Dirección de linea 1' : $fullAddressProcessed['street'],
+                empty($fullAddressProcessed['suburb']) ? 'Dirección de linea 2' : $fullAddressProcessed['suburb'],
+                $destPostcode,
+                empty($customerEmail) ? 'ventas@mienvio.mx' : $customerEmail,
+                empty($customerPhone) ? '5551814040' : $customerPhone,
+                $fullAddressProcessed['ref'],
+                $destCountryId,
+                $destRegion,
+                $destRegionCode,
+                $destCity
+            );
+
+            $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
+            $this->_curl->setOptions($options);
+
+            $this->_logger->debug('Mienviorates@collectRates :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('Mienviorates@collectRates :: create address FROM request: ' . json_encode($fromData));
+
+            $this->_curl->post($createAddressUrl, json_encode($fromData));
+            $addressFromResp = json_decode($this->_curl->getBody());
+
+            try {
+                $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in Mienviorates@collectRates :: create address FROM response: ' . $this->_curl->getBody());
+                return;
+            }
+
+            $this->_logger->debug('Mienviorates@collectRates :: create address TO request: ' . json_encode($toData));
+
+            $this->_curl->post($createAddressUrl, json_encode($toData));
+            $addressToResp = json_decode($this->_curl->getBody());
+
+            try {
+                $addressToId = $addressToResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in Mienviorates@collectRates :: create address TO response: ' . $this->_curl->getBody());
+                return;
+            }
+
+            $itemsMeasures = $this->getOrderDefaultMeasures($request->getAllItems());
+            $packageWeight = $this->convertWeight($request->getPackageWeight());
+
+            if (self::IS_QUOTE_ENDPOINT_ACTIVE) {
+                $rates = $this->quoteShipmentViaQuoteEndpoint(
+                    $itemsMeasures['items'],
+                    $addressFromId,
+                    $addressToId,
+                    $createQuoteUrl,
+                    $filterList
+                );
+            } else {
+                $rates = $this->quoteShipment(
+                    $itemsMeasures,
+                    $packageWeight,
+                    $getPackagesUrl,
+                    $createShipmentUrl,
+                    $options,
+                    $packageValue,
+                    $fromZipCode
+                );
+            }
+
+            foreach ($rates as $rate) {
+                $methodId = $this->parseReverseServiceLevel($rate['servicelevel']) . '-' . $rate['courier'];
+                $method = $this->_rateMethodFactory->create();
+                $method->setCarrier($this->getCarrierCode());
+                $method->setCarrierTitle($rate['courier']);
+                $method->setMethod((string)$methodId);
+                if (isset($rate['istradein'])) {
+                    $method->setCode($rate['istradein']);
+                } else {
+                    $method->setCode('');
+                }
+
+                $method->setMethodTitle($rate['servicelevel'].' - '.$rate['duration_terms']);
+                if ($freeShippingSet) {
+                    $method->setPrice(0);
+                    $method->setCost(0);
+                } else {
+                    $method->setPrice($rate['cost']);
+                    $method->setCost($rate['cost']);
+                }
+
+                $rateResponse->append($method);
+            }
+        } catch (\Exception $e) {
+            $this->_logger->debug("Rates Exception");
+            $this->_logger->debug($e);
+        }
+
+        return $rateResponse;
     }
 
     /**
@@ -109,194 +277,48 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      */
     private function processFullAddress($fullStreet)
     {
-        $this->_logger->debug('ProcessFullAddress', ['FullAddress' => $fullStreet]);
-
         $response = [
-            'street' => '.',
-            'suburb' => '.'
+            'street' => '',
+            'suburb' => '',
+            'ref' => ''
         ];
 
         if ($fullStreet != null && $fullStreet != "") {
+            // $fullStreetArray = explode("\n", $fullStreet);
+            // $count = count($fullStreetArray);
+
+            // if ($count > 0 && $fullStreetArray[0] !== false) {
+            //     if ($count > 1) {
+            //         $response['street'] = $fullStreetArray[0];
+            //     }
+            // }
+
+            // if ($count > 1 && $fullStreetArray[1] !== false) {
+            //     $response['suburb'] = $fullStreetArray[1];
+            // }
+
+            // /*
+            //  * Caso para cuando solamente viene una sola linea de Direccion,
+            //  * es decir la dirección Street uno, no es colocalda por el usuario.
+            //  */
+
+            // if ($count === 1) {
+            //     $response['suburb'] = $fullStreetArray[0];
+            // }
             $fullStreetArray = explode("\n", $fullStreet);
-            $count = count($fullStreetArray);
 
-            if ($count > 0 && $fullStreetArray[0] !== false) {
-                if ($count > 1) {
-                    $response['street'] = $fullStreetArray[0];
-                }
+            if (isset($fullStreetArray[0])) {
+                $response['street'] = $fullStreetArray[0];
             }
-
-            if ($count > 1 && $fullStreetArray[1] !== false) {
+            if (isset($fullStreetArray[1])) {
                 $response['suburb'] = $fullStreetArray[1];
             }
-
-            /*
-             * Caso para cuando solamente viene una sola linea de Direccion,
-             * es decir la dirección Street uno, no es colocalda por el usuario.
-             */
-
-            if ($count === 1) {
-                $response['suburb'] = $fullStreetArray[0];
+            if (isset($fullStreetArray[2])) {
+                $response['ref'] = $fullStreetArray[2];
             }
         }
 
         return $response;
-    }
-
-    /**
-     * Retrieve rates for given shipping request
-     *
-     * @param  RateRequest $request
-     * @return [type]               [description]
-     */
-    public function collectRates(RateRequest $request)
-    {
-        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-        $cart = $objectManager->get('\Magento\Checkout\Model\Cart');
-        $shippingAddress = $cart->getQuote()->getShippingAddress();
-
-        $freeShippingSet = $shippingAddress->getFreeShipping();
-
-
-
-        $shippingAddress = $cart->getQuote()->getShippingAddress();
-        $rateResponse = $this->_rateResultFactory->create();
-        $apiKey = $this->_mienvioHelper->getMienvioApi();
-        if ($apiKey == null) {
-            $apiKey = $this->_mienvioHelper->getMienvioApiRedundant();
-        }
-        $baseUrl =  $this->_mienvioHelper->getEnvironment();
-        $createShipmentUrl  = $baseUrl . 'api/shipments';
-        $quoteShipmentUrl   = $baseUrl . 'api/shipments/$shipmentId/rates';
-        $getPackagesUrl     = $baseUrl . 'api/packages';
-        $createAddressUrl   = $baseUrl . 'api/addresses';
-        $createQuoteUrl     = $baseUrl . 'api/quotes';
-
-        /*
-         * Section to grab the filter_list field
-         * Expected value | string
-         * Example value    | "DA8H,ZA8H"
-         */
-
-        $filterList = '';
-
-        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
-        $logger = new \Zend_Log();
-        $logger->addWriter($writer);
-        $this->_logger = $logger;
-
-
-
-        try {
-            /* ADDRESS CREATION */
-            $destCountryId  = $request->getDestCountryId();
-            $destCountry    = $request->getDestCountry();
-            $destRegion     = $request->getDestRegionId();
-            $destRegionCode = $request->getDestRegionCode();
-            $destFullStreet = $request->getDestStreet();
-            $fullAddressProcessed = $this->processFullAddress($destFullStreet);
-            $destCity       = $request->getDestCity();
-            $destPostcode   = $request->getDestPostcode();
-            $fromData = $this->createAddressDataStr(
-                'from',
-                "MIENVIO DE MEXICO",
-                $this->_mienvioHelper->getOriginStreet(),
-                $this->_mienvioHelper->getOriginStreet2(),
-                $this->_mienvioHelper->getOriginZipCode(),
-                "ventas@mienvio.mx",
-                "5551814040",
-                '',
-                $destCountryId,
-                $this->_mienvioHelper->getOriginCity()
-            );
-
-            $toData = $this->createAddressDataStr(
-                'to',
-                'usuario temporal',
-                'calle temporal',
-                $fullAddressProcessed['suburb'],
-                $destPostcode,
-                "ventas@mienvio.mx",
-                "5551814040",
-                $fullAddressProcessed['suburb'],
-                $destCountryId,
-                $destRegion,
-                $destRegionCode,
-                $destCity
-            );
-
-
-            $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
-            $this->_curl->setOptions($options);
-            $this->_logger->debug('URL MIENVIO CREATE ADDRESS', ['url' => $createAddressUrl]);
-            $this->_curl->post($createAddressUrl, json_encode($fromData));
-            $addressFromResp = json_decode($this->_curl->getBody());
-            $this->_logger->debug($this->_curl->getBody());
-            $addressFromId = $addressFromResp->{'address'}->{'object_id'};
-
-            $this->_curl->post($createAddressUrl, json_encode($toData));
-            $addressToResp = json_decode($this->_curl->getBody());
-            $this->_logger->debug($this->_curl->getBody());
-            $addressToId = $addressToResp->{'address'}->{'object_id'};
-
-            $itemsMeasures = $this->getOrderDefaultMeasures($request->getAllItems());
-            $packageWeight = $this->convertWeight($request->getPackageWeight());
-
-            if (self::IS_QUOTE_ENDPOINT_ACTIVE) {
-                $rates = $this->quoteShipmentViaQuoteEndpoint(
-                    $itemsMeasures['items'],
-                    $addressFromId,
-                    $addressToId,
-                    $createQuoteUrl,
-                    $filterList
-                );
-            } else {
-                $rates = $this->quoteShipment(
-                    $itemsMeasures,
-                    $packageWeight,
-                    $getPackagesUrl,
-                    $createShipmentUrl,
-                    $options,
-                    $packageValue,
-                    $fromZipCode
-                );
-            }
-
-
-            foreach ($rates as $rate) {
-                $this->_logger->debug('rate_id');
-                $methodId = $this->parseReverseServiceLevel($rate['servicelevel']) . '-' . $rate['courier'];
-                $this->_logger->debug((string)$methodId);
-                $this->_logger->debug(strval($rate['id']));
-                $this->_logger->debug(serialize($rate));
-
-                $method = $this->_rateMethodFactory->create();
-                $method->setCarrier($this->getCarrierCode());
-                $method->setCarrierTitle($rate['courier']);
-                $method->setMethod((string)$methodId);
-                if (isset($rate['istradein'])) {
-                    $method->setCode($rate['istradein']);
-                } else {
-                    $method->setCode('');
-                }
-
-                $method->setMethodTitle($rate['servicelevel'].' - '.$rate['duration_terms']);
-                if ($freeShippingSet) {
-                    $method->setPrice(0);
-                    $method->setCost(0);
-                } else {
-                    $method->setPrice($rate['cost']);
-                    $method->setCost($rate['cost']);
-                }
-
-                $rateResponse->append($method);
-            }
-        } catch (\Exception $e) {
-            $this->_logger->debug("Rates Exception");
-            $this->_logger->debug($e);
-        }
-
-        return $rateResponse;
     }
 
     /**
@@ -310,6 +332,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      */
     private function quoteShipmentViaQuoteEndpoint($items, $addressFromId, $addressToId, $createQuoteUrl, $filterList = null)
     {
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: about to create quote shipment');
+
         $quoteReqData = [
             'items'         => $items,
             'address_from'  => $addressFromId,
@@ -319,11 +343,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'source_type' => 'magento',
         ];
 
-        $this->_logger->debug('Creating quote (mienviorates)', ['request' => json_encode($quoteReqData)]);
-        $this->_logger->debug('URL MIENVIO', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote request ' . json_encode($quoteReqData));
+
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
         $quoteResponse = json_decode($this->_curl->getBody());
-        $this->_logger->debug('Creating quote (mienviorates)', ['response' => $this->_curl->getBody()]);
+
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote response ' . json_encode($quoteResponse));
 
         if (isset($quoteResponse->{'rates'})) {
             $rates = [];
@@ -611,12 +637,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         ];
 
         $location = $this->_mienvioHelper->getLocation();
-        $this->_logger->debug('LOCATION: '.$location);
-        $this->_logger->debug('Country: '.$countryCode);
-        $this->_logger->debug('STREET2: '.$street2);
-        $this->_logger->debug('DestRegion: '.$destRegion);
-        $this->_logger->debug('DestRegionCode: '.$destRegionCode);
-        $this->_logger->debug('DesCity: '.$destCity);
 
         if ($location == 'street2') {
             if ($countryCode === 'MX') {
@@ -654,7 +674,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $data['level_2'] = $this->getLevel2FromAddress($destRegion, $destRegionCode, $destCity);
             }
         }
-        $this->_logger->debug('DATA COMPLETE: '.serialize($data));
+
         return $data;
     }
 
@@ -704,10 +724,16 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $itemsArr = [];
 
         foreach ($items as $item) {
+            if ($item->getParentItem()) {
+                continue;
+            }
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $productName = $item->getName();
+            $productSku = $item->getSku();
             $orderDescription .= $productName . ' ';
-            $product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            //$product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            $productRepository = $objectManager->get('\Magento\Catalog\Model\ProductRepository');
+            $product = $productRepository->get($productSku);
             $dimensions = $this->getDimensionItems($product);
 
             if (is_array($dimensions)) {
@@ -722,7 +748,6 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $weight = 1;
             }
 
-
             $orderLength += $length;
             $orderWidth  += $width;
             $orderHeight += $height;
@@ -730,7 +755,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $volWeight = $this->calculateVolumetricWeight($length, $width, $height);
             $packageVolWeight += $volWeight;
             $itemsArr[] = [
-                'id' => $item->getId(),
+                'id' => $productSku,
                 'name' => $productName,
                 'length' => $length,
                 'width' => $width,
@@ -841,7 +866,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $width = 0.5;
             $height = 0.5;
             $weight = 0.2;
-            $this->_logger->debug('This item will be trated as a kit with measures in 0.', ['item info' => serialize($product->getData())]);
+            $this->_logger->debug('This item will be trated as a kit with measures in 0 ' . json_encode($product->getData()));
         }
         return array(
             'length' => $length,
@@ -961,5 +986,13 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'package' => $chosenPackage,
             'qty' => $qty
         ];
+    }
+
+    private function initLogger()
+    {
+        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
+        $logger = new \Zend_Log();
+        $logger->addWriter($writer);
+        $this->_logger = $logger;
     }
 }

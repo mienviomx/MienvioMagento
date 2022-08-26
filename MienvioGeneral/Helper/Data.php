@@ -7,21 +7,25 @@ use Magento\Store\Model\ScopeInterface;
 
 class Data extends AbstractHelper
 {
-    const XML_PATH_GENERAL = 'mienviogeneral/';
-    const XML_PATH_API_KEY = 'carriers/mienviocarrier/apikey';
-    const XML_PATH_API_KEY_RED = 'carriers/mienviocarrier/apikeyredundant';
-    const XML_PATH_IS_ENABLE_MIENVIO = 'carriers/mienviocarrier/active';
-    const XML_PATH_ENVIRONMENT = 'carriers/mienviocarrier/environment';
-    const XML_MEASURES = 'carriers/mienviocarrier/measures';
-    const XML_PATH_FREE_SHIPPING = 'carriers/mienviocarrier/freeshipping';
-    const XML_PATH_TITLE_METHOD_FREE = 'carriers/mienviocarrier/titlemethodfree';
-    const XML_PATH_SERVICE_LEVEL = 'carriers/mienviocarrier/servicelevel';
-    const XML_PATH_PROVIDER = 'carriers/mienviocarrier/provider';
-    const XML_PATH_LOCATION = 'carriers/mienviocarrier/location';
-    const XML_PATH_Street_store = 'shipping/origin/street_line1';
-    const XML_PATH_Street2_store = 'shipping/origin/street_line2';
-    const XML_PATH_ZipCode_store = 'shipping/origin/postcode';
-    const XML_PATH_city_store = 'shipping/origin/city';
+    public const XML_PATH_GENERAL = 'mienviogeneral/';
+    public const XML_PATH_API_KEY = 'carriers/mienviocarrier/apikey';
+    public const XML_PATH_API_KEY_RED = 'carriers/mienviocarrier/apikeyredundant';
+    public const XML_PATH_IS_ENABLE_MIENVIO = 'carriers/mienviocarrier/active';
+    public const XML_PATH_ENVIRONMENT = 'carriers/mienviocarrier/environment';
+    public const XML_MEASURES = 'carriers/mienviocarrier/measures';
+    public const XML_PATH_FREE_SHIPPING = 'carriers/mienviocarrier/freeshipping';
+    public const XML_PATH_TITLE_METHOD_FREE = 'carriers/mienviocarrier/titlemethodfree';
+    public const XML_PATH_SERVICE_LEVEL = 'carriers/mienviocarrier/servicelevel';
+    public const XML_PATH_PROVIDER = 'carriers/mienviocarrier/provider';
+    public const XML_PATH_LOCATION = 'carriers/mienviocarrier/location';
+    public const XML_PATH_Street_store = 'shipping/origin/street_line1';
+    public const XML_PATH_Street2_store = 'shipping/origin/street_line2';
+    public const XML_PATH_ZipCode_store = 'shipping/origin/postcode';
+    public const XML_PATH_city_store = 'shipping/origin/city';
+    public const XML_PATH_store_name = 'general/store_information/name';
+    public const XML_PATH_store_phone = 'general/store_information/phone';
+    public const XML_PATH_store_general_email = 'trans_email/ident_general/email';
+
     public function getConfigValue($field, $storeId = null)
     {
         return $this->scopeConfig->getValue(
@@ -36,13 +40,28 @@ class Data extends AbstractHelper
         return $this->getConfigValue(self::XML_PATH_GENERAL .'general/'. $code, $storeId);
     }
 
+    public function getStoreName($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_name, $storeId);
+    }
+
+    public function getStorePhone($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_phone, $storeId);
+    }
+
+    public function getStoreEmail($storeId = null)
+    {
+        return $this->getConfigValue(self::XML_PATH_store_general_email, $storeId);
+    }
+
     public function isMienvioActive($storeId = null)
     {
-        return (boolean)$this->getConfigValue(self::XML_PATH_IS_ENABLE_MIENVIO, $storeId);
+        return (bool)$this->getConfigValue(self::XML_PATH_IS_ENABLE_MIENVIO, $storeId);
     }
     public function isFreeShipping($storeId = null)
     {
-        return (boolean)$this->getConfigValue(self::XML_PATH_FREE_SHIPPING, $storeId);
+        return (bool)$this->getConfigValue(self::XML_PATH_FREE_SHIPPING, $storeId);
     }
     public function getTitleMethodFree($storeId = null)
     {
@@ -73,7 +92,7 @@ class Data extends AbstractHelper
                 $result = 'https://dev-sandbox.mienvio.mx/';
                 break;
             case 2:// Develop/Localhost
-                $result = 'https://mienvio.test/';
+                $result = 'http://mienvio.test/';
                 break;
             default:
                 $result = 'https://dev-sandbox.mienvio.mx/';

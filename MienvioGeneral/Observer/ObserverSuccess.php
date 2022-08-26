@@ -1,4 +1,5 @@
 <?php
+
 namespace MienvioMagento\MienvioGeneral\Observer;
 
 use Magento\Framework\Event\Observer;
@@ -12,13 +13,13 @@ class ObserverSuccess implements ObserverInterface
 {
     private $collectionFactory;
     private $quoteRepository;
-    const XML_PATH_Street_store = 'shipping/origin/street_line2';
+    public const XML_PATH_Street_store = 'shipping/origin/street_line2';
 
     /**
      * Defines if quote endpoint will be used at rates
      * @var boolean
      */
-    const IS_QUOTE_ENDPOINT_ACTIVE = true;
+    public const IS_QUOTE_ENDPOINT_ACTIVE = true;
 
     protected $_storeManager;
 
@@ -41,31 +42,36 @@ class ObserverSuccess implements ObserverInterface
 
     public function execute(Observer $observer)
     {
+        $this->initLogger();
+
         /** @var \Magento\Sales\Model\Order $order */
         $order = $observer->getData('order');
         $shippingMethodObject = $order->getShippingMethod(true);
         if (!$shippingMethodObject) {
             return $this;
         }
-        $shipping_id = $shippingMethodObject->getMethod();
-        $chosenServicelevel = '';
+        $shippingId = $shippingMethodObject->getMethod();
+        $chosenServiceLevel = '';
         $chosenProvider = '';
 
-
-        $dataOrder = $order->getData();
-        $order_quote_id = $dataOrder['quote_id'];
-        $order_shipping_amount = $dataOrder['shipping_amount'];
-        $order_shipping_description = $dataOrder['shipping_description'];
-        $order_shipping_method = $dataOrder['shipping_method'];
+        // $dataOrder = $order->getData();
+        // $order_quote_id = $dataOrder['quote_id'];
+        // $order_shipping_amount = $dataOrder['shipping_amount'];
+        // $order_shipping_description = $dataOrder['shipping_description'];
+        // $order_shipping_method = $dataOrder['shipping_method'];
         $quoteId = $order->getQuoteId();
         $quote = $this->quoteRepository->get($quoteId);
 
-        $shipping_cost = $order->getShippingAmount();
+        $shippingCost = $order->getShippingAmount();
 
         $isFreeActive = $this->checkIfIsFreeShipping();
-        $titleMethodFree = $this->_mienvioHelper->getTitleMethodFree();
+        $freeLabel = $isFreeActive ? 'ACTIVE' : 'INACTIVE';
+        // $titleMethodFree = $this->_mienvioHelper->getTitleMethodFree();
 
-        if ($shipping_cost == 0 && $isFreeActive === true) {
+        $this->_logger->debug('ObserverSuccess@execute :: shipping cost is ' . $shippingCost . ' and shipping free in Mienvío plugin is ' . $freeLabel);
+
+        if ($shippingCost == 0 && $isFreeActive === true) {
+            $this->_logger->debug('ObserverSuccess@execute :: free shipping flow');
             try {
                 $mienvioResponse = $this->saveFreeShipping($observer);
                 $mienvioAmount = $mienvioResponse['rates'][0]["amount"];
@@ -85,23 +91,26 @@ class ObserverSuccess implements ObserverInterface
             } catch (\Exception $e) {
                 $order->setMienvioQuoteId('Generar guía Manual');
                 $order->save();
-                $this->_logger->debug('Error when generate Free Shipping', ['e' => $e]);
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: free shipping flow: ' . $e->getMessage());
             }
 
             return $this;
         }
 
+        $this->_logger->debug('ObserverSuccess@execute :: normal flow');
 
         if ($shippingMethodObject->getCarrierCode() != $this->_code) {
+            $this->_logger->debug('ObserverSuccess@execute :: diff in carrier code, returning');
             return $this;
         }
 
         if (self::IS_QUOTE_ENDPOINT_ACTIVE) {
-            $shippingInfo = explode("-", $shipping_id);
-            $chosenServicelevel = $shippingInfo[0];
+            $shippingInfo = explode("-", $shippingId);
+            $chosenServiceLevel = $shippingInfo[0];
             $chosenProvider = $shippingInfo[1];
         }
 
+        $this->_logger->debug('ObserverSuccess@execute :: chosen provider and service: ' . $chosenProvider . "({$chosenServiceLevel})");
 
         // Logic to save orders in mienvio api
         try {
@@ -113,12 +122,13 @@ class ObserverSuccess implements ObserverInterface
             $createQuoteUrl     = $baseUrl . 'api/quotes';
 
             $order = $observer->getEvent()->getOrder();
-            $order->setMienvioCarriers($shipping_id);
-            $orderId = $order->getId();
+            $order->setMienvioCarriers($shippingId);
+            // $orderId = $order->getId();
             $orderData = $order->getData();
             $quoteId = $order->getQuoteId();
 
             if ($quoteId === null) {
+                $this->_logger->debug('ObserverSuccess@execute :: quote id is null, returning');
                 return $this;
             }
 
@@ -127,24 +137,23 @@ class ObserverSuccess implements ObserverInterface
             $countryId = $shippingAddress->getCountryId();
             $destRegion     = $shippingAddress->getRegion();
             $destRegionCode = $shippingAddress->getRegionCode();
+            $storeName = trim($this->_mienvioHelper->getStoreName());
+            $storePhone = trim($this->_mienvioHelper->getStorePhone());
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
 
             if ($shippingAddress === null) {
+                $this->_logger->debug('ObserverSuccess@execute :: shipping address is null, returning');
                 return $this;
             }
 
-            $this->_logger->info("Shipping address", ["data" => $shippingAddress->getData()]);
-            $this->_logger->info("order", ["data" => $order->getData()]);
-            $this->_logger->info("quoteId", ["data" => $quoteId]);
-            $this->_logger->info("shippingid", ["data" => $shipping_id]);
-
             $fromData = $this->createAddressDataStr(
                 'from',
-                "MIENVIO DE MEXICO",
+                empty($storeName) ? "MIENVIO DE MEXICO" : $storeName,
                 $this->_mienvioHelper->getOriginStreet(),
                 $this->_mienvioHelper->getOriginStreet2(),
                 $this->_mienvioHelper->getOriginZipCode(),
-                "ventas@mienvio.mx",
-                "4422876138",
+                empty($storeEmail) ? "ventas@mienvio.mx" : $storeEmail,
+                empty($storePhone) ? "5551814040" : $storePhone,
                 '',
                 $countryId,
                 $this->_mienvioHelper->getOriginCity()
@@ -172,20 +181,33 @@ class ObserverSuccess implements ObserverInterface
                 $shippingAddress->getCity()
             );
 
-            $this->_logger->info("Addresses data", ["to" => $toData, "from" => $fromData]);
-
-            $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
+            $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
+
+            $this->_logger->debug('ObserverSuccess@execute :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('ObserverSuccess@execute :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
             $addressFromResp = json_decode($this->_curl->getBody());
-            $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+
+            try {
+                $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: create address FROM response: ' . $this->_curl->getBody());
+                return;
+            }
+
+            $this->_logger->debug('ObserverSuccess@execute :: create address TO request: ' . json_encode($toData));
 
             $this->_curl->post($createAddressUrl, json_encode($toData));
             $addressToResp = json_decode($this->_curl->getBody());
-            $addressToId = $addressToResp->{'address'}->{'object_id'};
 
-            $this->_logger->info("responses", ["to" => $addressToId, "from" => $addressFromId]);
+            try {
+                $addressToId = $addressToResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: create address TO response: ' . $this->_curl->getBody());
+                return;
+            }
 
             /* Measures */
             $itemsMeasures = $this->getOrderDefaultMeasures($order->getAllVisibleItems());
@@ -197,12 +219,11 @@ class ObserverSuccess implements ObserverInterface
                     $addressFromId,
                     $addressToId,
                     $createQuoteUrl,
-                    $chosenServicelevel,
+                    $chosenServiceLevel,
                     $chosenProvider,
                     $order->getIncrementId()
                 );
                 $mienvioQuoteId = $mienvioResponse['quote_id'];
-                $this->_logger->info("QUOTEid", ["data" => $mienvioQuoteId]);
                 $order->setMienvioQuoteId($mienvioQuoteId);
                 $order->save();
                 return $this;
@@ -252,7 +273,7 @@ class ObserverSuccess implements ObserverInterface
                 'length' => $orderLength,
                 'width' => $orderWidth,
                 'height' => $orderHeight,
-                'rate' => $shipping_id,
+                'rate' => $shippingId,
                 'quantity' => $numberOfPackages,
                 'source_type' => 'magento',
                 'order' => [
@@ -267,7 +288,7 @@ class ObserverSuccess implements ObserverInterface
             $response = json_decode($this->_curl->getBody());
 
             $this->_logger->info('Shipment response', ["data" => $response]);
-            $this->_logger->info("shippingid", ["data" => $shipping_id]);
+            $this->_logger->info("shippingid", ["data" => $shippingId]);
         } catch (\Exception $e) {
             $this->_logger->info("error saving new shipping method Exception");
             $this->_logger->info($e->getMessage());
@@ -290,6 +311,8 @@ class ObserverSuccess implements ObserverInterface
      */
     private function createQuoteFromItems($items, $addressFromId, $addressToId, $createQuoteUrl, $servicelevel, $provider, $orderId)
     {
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: About to create purchase shipment');
+
         $quoteReqData = [
             'items'         => $items,
             'address_from'  => $addressFromId,
@@ -302,12 +325,15 @@ class ObserverSuccess implements ObserverInterface
             'source_type' => 'magento'
         ];
 
-        $this->_logger->debug('Creating quote (ObserverSuccess)'.$createQuoteUrl, ['request' => json_encode($quoteReqData)]);
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote request ' . json_encode($quoteReqData));
+
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
-        $quoteResponse = $this->_curl->getBody();
-        $res = json_decode(stripslashes($quoteResponse), true);
-        $this->_logger->debug('Creating quote (ObserverSuccess)', ['response' => $res]);
-        return $res;
+        $quoteResponse = json_decode(stripslashes($this->_curl->getBody()), true);
+
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote response ' . json_encode($quoteResponse));
+
+        return $quoteResponse;
     }
 
     /**
@@ -326,11 +352,16 @@ class ObserverSuccess implements ObserverInterface
         $itemsArr = [];
 
         foreach ($items as $item) {
+            if ($item->getParentItem()) {
+                continue;
+            }
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $productName = $item->getName();
+            $productSku = $item->getSku();
             $orderDescription .= $productName . ' ';
-            $product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
-            $this->_logger->debug('Items PREUBA 22 FEBRERO', ['PRODUCTO' => $product]);
+            //$product = $objectManager->create('Magento\Catalog\Model\Product')->loadByAttribute('name', $productName);
+            $productRepository = $objectManager->get('\Magento\Catalog\Model\ProductRepository');
+            $product = $productRepository->get($productSku);
             $dimensions = $this->getDimensionItems($product);
 
             if (is_array($dimensions)) {
@@ -342,7 +373,7 @@ class ObserverSuccess implements ObserverInterface
                 $length = 2;
                 $width  = 2;
                 $height = 2;
-                $weight = 0.5;
+                $weight = 1;
             }
 
             $orderLength += $length;
@@ -351,9 +382,8 @@ class ObserverSuccess implements ObserverInterface
 
             $volWeight = $this->calculateVolumetricWeight($length, $width, $height);
             $packageVolWeight += $volWeight;
-
             $itemsArr[] = [
-                'id' => $item->getSku(),
+                'id' => $productSku,
                 'name' => $productName,
                 'length' => $length,
                 'width' => $width,
@@ -436,7 +466,7 @@ class ObserverSuccess implements ObserverInterface
             $width = 0.5;
             $height = 0.5;
             $weight = 0.2;
-            $this->_logger->debug('This item will be trated as a kit with measures in 0.', ['item info' => serialize($product->getData())]);
+            $this->_logger->debug('This item will be trated as a kit with measures in 0 ' . json_encode($product->getData()));
         }
         return array(
             'length' => $length,
@@ -587,11 +617,6 @@ class ObserverSuccess implements ObserverInterface
         ];
 
         $location = $this->_mienvioHelper->getLocation();
-        $this->_logger->debug('LOCATION: '.$location);
-        $this->_logger->debug('STREET2: '.$street2);
-        $this->_logger->debug('DestRegion: '.$destRegion);
-        $this->_logger->debug('DestRegionCode: '.$destRegionCode);
-        $this->_logger->debug('DesCity: '.$destCity);
 
         if ($location == 'street2') {
             if ($countryCode === 'MX') {
@@ -630,8 +655,6 @@ class ObserverSuccess implements ObserverInterface
             }
         }
 
-
-        $this->_logger->info("createAddressDataStr", ["data" => $data]);
         return $data;
     }
 
@@ -669,9 +692,12 @@ class ObserverSuccess implements ObserverInterface
     {
         $order = $observer->getData('order');
         $shippingMethodObject = $order->getShippingMethod(true);
-        $shipping_id = $shippingMethodObject->getMethod();
-        $chosenServicelevel = $this->_mienvioHelper->getServiceLevel();
+        $shippingId = $shippingMethodObject->getMethod();
+        $chosenServiceLevel = $this->_mienvioHelper->getServiceLevel();
         $chosenProvider = $this->_mienvioHelper->getProvider();
+
+        $this->_logger->info("ObserverSuccess@saveFreeShipping :: shipping id: {$shippingId}");
+        $this->_logger->info("ObserverSuccess@saveFreeShipping :: order data [1]: " . json_encode($order->getData()));
 
         try {
             $baseUrl =  $this->_mienvioHelper->getEnvironment();
@@ -682,12 +708,15 @@ class ObserverSuccess implements ObserverInterface
             $createQuoteUrl     = $baseUrl . 'api/quotes';
 
             $order = $observer->getEvent()->getOrder();
-            $order->setMienvioCarriers($shipping_id);
-            $orderId = $order->getId();
+            $order->setMienvioCarriers($shippingId);
+            // $orderId = $order->getId();
             $orderData = $order->getData();
             $quoteId = $order->getQuoteId();
 
+            $this->_logger->info("ObserverSuccess@saveFreeShipping :: order data [2]: " . json_encode($order->getData()));
+
             if ($quoteId === null) {
+                $this->_logger->info("ObserverSuccess@saveFreeShipping :: quote id is null, returning");
                 return $this;
             }
 
@@ -696,22 +725,22 @@ class ObserverSuccess implements ObserverInterface
             $countryId = $shippingAddress->getCountryId();
 
             if ($shippingAddress === null) {
+                $this->_logger->info("ObserverSuccess@saveFreeShipping :: shipping address is null, returning");
                 return $this;
             }
 
-            $this->_logger->info("Shipping address", ["data" => $shippingAddress->getData()]);
-            $this->_logger->info("order", ["data" => $order->getData()]);
-            $this->_logger->info("quoteId", ["data" => $quoteId]);
-            $this->_logger->info("shippingid", ["data" => $shipping_id]);
+            $storeName = trim($this->_mienvioHelper->getStoreName());
+            $storePhone = trim($this->_mienvioHelper->getStorePhone());
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
 
             $fromData = $this->createAddressDataStr(
                 'from',
-                "MIENVIO DE MEXICO",
+                empty($storeName) ? "MIENVIO DE MEXICO" : $storeName,
                 $this->_mienvioHelper->getOriginStreet(),
                 $this->_mienvioHelper->getOriginStreet2(),
                 $this->_mienvioHelper->getOriginZipCode(),
-                "ventas@mienvio.mx",
-                "4422876138",
+                empty($storeEmail) ? "ventas@mienvio.mx" : $storeEmail,
+                empty($storePhone) ? "5551814040" : $storePhone,
                 '',
                 $countryId,
                 '',
@@ -741,20 +770,31 @@ class ObserverSuccess implements ObserverInterface
                 $shippingAddress->getCity()
             );
 
-            $this->_logger->info("Addresses data", ["to" => $toData, "from" => $fromData]);
-
-            $options = [ CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
+            $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
+
+            $this->_logger->debug('ObserverSuccess@saveFreeShipping :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('ObserverSuccess@saveFreeShipping :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
             $addressFromResp = json_decode($this->_curl->getBody());
-            $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+
+            try {
+                $addressFromId = $addressFromResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@saveFreeShipping :: create address FROM response: ' . $this->_curl->getBody());
+                return;
+            }
 
             $this->_curl->post($createAddressUrl, json_encode($toData));
             $addressToResp = json_decode($this->_curl->getBody());
-            $addressToId = $addressToResp->{'address'}->{'object_id'};
 
-            $this->_logger->info("responses", ["to" => $addressToId, "from" => $addressFromId]);
+            try {
+                $addressToId = $addressToResp->{'address'}->{'object_id'};
+            } catch (\Exception $e) {
+                $this->_logger->debug('Exception in ObserverSuccess@saveFreeShipping :: create address TO response: ' . $this->_curl->getBody());
+                return;
+            }
 
             /* Measures */
             $itemsMeasures = $this->getOrderDefaultMeasures($order->getAllVisibleItems());
@@ -766,17 +806,15 @@ class ObserverSuccess implements ObserverInterface
                     $addressFromId,
                     $addressToId,
                     $createQuoteUrl,
-                    $chosenServicelevel,
+                    $chosenServiceLevel,
                     $chosenProvider,
                     $order->getIncrementId()
                 );
 
-
                 return $response;
             }
         } catch (\Exception $e) {
-            $this->_logger->info("error saving new shipping method Exception");
-            $this->_logger->info($e->getMessage());
+            $this->_logger->debug("Exception in ObserverSuccess@saveFreeShipping :: {$e->getMessage()}");
         }
     }
 
@@ -890,5 +928,13 @@ class ObserverSuccess implements ObserverInterface
         }
 
         return $parsed;
+    }
+
+    private function initLogger()
+    {
+        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
+        $logger = new \Zend_Log();
+        $logger->addWriter($writer);
+        $this->_logger = $logger;
     }
 }
