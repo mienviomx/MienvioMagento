@@ -70,7 +70,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
         $shippingAddress = $cart->getQuote()->getShippingAddress();
         $freeShippingSet = $shippingAddress->getFreeShipping();
 
-        $this->_logger->debug('Mienviorates@collectRates :: free shipping for shipping address', ['value' => $freeShippingSet]);
+        $this->_logger->debug('Mienviorates@collectRates :: free shipping for shipping address: ' . $freeShippingSet);
 
         $rateResponse = $this->_rateResultFactory->create();
         $apiKey = $this->_mienvioHelper->getMienvioApi();
@@ -143,7 +143,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
 
-            $this->_logger->debug('Mienviorates@collectRates :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('Mienviorates@collectRates :: create address url: ' . $createAddressUrl);
             $this->_logger->debug('Mienviorates@collectRates :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
@@ -215,8 +215,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
                 $rateResponse->append($method);
             }
         } catch (\Exception $e) {
-            $this->_logger->debug("Rates Exception");
-            $this->_logger->debug($e);
+            $this->_logger->debug("Exception in Mienviorates@collectRates: {$e->getMessage()}");
         }
 
         return $rateResponse;
@@ -343,7 +342,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'source_type' => 'magento',
         ];
 
-        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote url: ' . $createQuoteUrl);
         $this->_logger->debug('Mienviorates@quoteShipmentViaQuoteEndpoint :: create quote request ' . json_encode($quoteReqData));
 
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
@@ -535,7 +534,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $orderWidth  = $chosenPackage->{'width'};
             $orderHeight = $chosenPackage->{'height'};
         } catch (\Exception $e) {
-            $this->_logger->debug('Error when getting needed package', ['e' => $e]);
+            $this->_logger->debug('Exception in Mienviorates@quoteShipment :: getting available packages: ' . $e->getMessage());
         }
 
         $this->_logger->debug('Order info', [
@@ -623,7 +622,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
      * @param  string $countryCode
      * @return string
      */
-    private function createAddressDataStr($type, $name, $street, $street2, $zipcode, $email, $phone, $reference = '.', $countryCode, $destRegion = null, $destRegionCode = null, $destCity = null)
+    private function createAddressDataStr($type, $name, $street, $street2, $zipcode, $email, $phone, $reference, $countryCode, $destRegion = null, $destRegionCode = null, $destCity = null)
     {
         $data = [
             'object_type' => 'PURCHASE',
@@ -632,7 +631,7 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             'street2' => $street2,
             'email' => $email,
             'phone' => $phone,
-            'reference' => '',
+            'reference' => $reference,
             'country' => $countryCode
         ];
 

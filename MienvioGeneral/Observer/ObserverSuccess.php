@@ -98,6 +98,8 @@ class ObserverSuccess implements ObserverInterface
         }
 
         $this->_logger->debug('ObserverSuccess@execute :: normal flow');
+        $this->_logger->debug('ObserverSuccess@execute :: shipping method carrier code: ' . $shippingMethodObject->getCarrierCode());
+        $this->_logger->debug('ObserverSuccess@execute :: self shipping method carrier code: ' . $this->_code);
 
         if ($shippingMethodObject->getCarrierCode() != $this->_code) {
             $this->_logger->debug('ObserverSuccess@execute :: diff in carrier code, returning');
@@ -110,7 +112,7 @@ class ObserverSuccess implements ObserverInterface
             $chosenProvider = $shippingInfo[1];
         }
 
-        $this->_logger->debug('ObserverSuccess@execute :: chosen provider and service: ' . $chosenProvider . "({$chosenServiceLevel})");
+        $this->_logger->debug('ObserverSuccess@execute :: chosen provider and service: ' . $chosenProvider . " ({$chosenServiceLevel})");
 
         // Logic to save orders in mienvio api
         try {
@@ -184,7 +186,7 @@ class ObserverSuccess implements ObserverInterface
             $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
 
-            $this->_logger->debug('ObserverSuccess@execute :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('ObserverSuccess@execute :: create address url: ' . $createAddressUrl);
             $this->_logger->debug('ObserverSuccess@execute :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
@@ -250,17 +252,17 @@ class ObserverSuccess implements ObserverInterface
                 $orderWidth = $chosenPackage->{'width'};
                 $orderHeight = $chosenPackage->{'height'};
             } catch (\Exception $e) {
-                $this->_logger->debug('Error when getting needed package', ['e' => $e]);
+                $this->_logger->debug('Exception in ObserverSuccess@execute :: getting available packages: ' . $e->getMessage());
             }
 
-            $this->_logger->debug('order info', [
+            $this->_logger->debug('ObserverSuccess@execute :: Order info: ' . json_encode([
                 'packageWeight' => $packageWeight,
                 'volWeight' => $packageVolWeight,
                 'maxWeight' => $orderWeight,
                 'package' => $chosenPackage,
                 'description' => $orderDescription,
                 'numberOfPackages' => $numberOfPackages
-            ]);
+            ]));
 
             $shipmentReqData = [
                 'object_purpose' => 'PURCHASE',
@@ -282,16 +284,15 @@ class ObserverSuccess implements ObserverInterface
                 ]
             ];
 
-            $this->_logger->info('Shipment request', ["data" => $shipmentReqData]);
+            $this->_logger->info('ObserverSuccess@execute :: Create shipment url: ' . $createShipmentUrl);
+            $this->_logger->info('ObserverSuccess@execute :: Shipment request: ' . json_encode($shipmentReqData));
 
             $this->_curl->post($createShipmentUrl, json_encode($shipmentReqData));
             $response = json_decode($this->_curl->getBody());
 
-            $this->_logger->info('Shipment response', ["data" => $response]);
-            $this->_logger->info("shippingid", ["data" => $shippingId]);
+            $this->_logger->info('ObserverSuccess@execute :: Create shipment response: ' . $this->_curl->getBody());
         } catch (\Exception $e) {
-            $this->_logger->info("error saving new shipping method Exception");
-            $this->_logger->info($e->getMessage());
+            $this->_logger->debug("Exception in ObserverSuccess@execute :: storing shipment: " . $e->getMessage());
         }
 
         return $this;
@@ -325,7 +326,7 @@ class ObserverSuccess implements ObserverInterface
             'source_type' => 'magento'
         ];
 
-        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote url', ['url' => $createQuoteUrl]);
+        $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote url: ' . $createQuoteUrl);
         $this->_logger->debug('ObserverSuccess@createQuoteFromItems :: create quote request ' . json_encode($quoteReqData));
 
         $this->_curl->post($createQuoteUrl, json_encode($quoteReqData));
@@ -489,7 +490,7 @@ class ObserverSuccess implements ObserverInterface
         $response = json_decode($this->_curl->getBody());
         $packages = $response->{'results'};
 
-        $this->_logger->debug("packages", ["packages" => $packages]);
+        $this->_logger->debug("ObserverSuccess@getAvailablePackages :: packages: " . json_encode($packages));
 
         return $packages;
     }
@@ -604,7 +605,7 @@ class ObserverSuccess implements ObserverInterface
      * @param  string $countryCode
      * @return string
      */
-    private function createAddressDataStr($type, $name, $street, $street2, $zipcode, $email, $phone, $reference = '.', $countryCode, $destRegion = null, $destRegionCode = null, $destCity = null)
+    private function createAddressDataStr($type, $name, $street, $street2, $zipcode, $email, $phone, $reference, $countryCode, $destRegion = null, $destRegionCode = null, $destCity = null)
     {
         $data = [
             'object_type' => 'PURCHASE',
@@ -773,7 +774,7 @@ class ObserverSuccess implements ObserverInterface
             $options = [CURLOPT_HTTPHEADER => ['Content-Type: application/json', "Authorization: Bearer {$apiKey}"]];
             $this->_curl->setOptions($options);
 
-            $this->_logger->debug('ObserverSuccess@saveFreeShipping :: create address url', ['url' => $createAddressUrl]);
+            $this->_logger->debug('ObserverSuccess@saveFreeShipping :: create address url: ' . $createAddressUrl);
             $this->_logger->debug('ObserverSuccess@saveFreeShipping :: create address FROM request: ' . json_encode($fromData));
 
             $this->_curl->post($createAddressUrl, json_encode($fromData));
