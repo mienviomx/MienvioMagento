@@ -100,12 +100,12 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
             $fullAddressProcessed = $this->processFullAddress($destFullStreet);
             $destCity       = $request->getDestCity();
             $destPostcode   = $request->getDestPostcode();
-            $customerName  = trim($shippingAddress->getName());
-            $customerEmail  = trim($shippingAddress->getEmail());
-            $customerPhone = trim($shippingAddress->getTelephone());
-            $storeName = trim($this->_mienvioHelper->getStoreName());
-            $storePhone = trim($this->_mienvioHelper->getStorePhone());
-            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+            $customerName  = trim($shippingAddress->getName() ?? '');
+            $customerEmail  = trim($shippingAddress->getEmail() ?? '');
+            $customerPhone = trim($shippingAddress->getTelephone() ?? '');
+            $storeName = trim($this->_mienvioHelper->getStoreName() ?? '');
+            $storePhone = trim($this->_mienvioHelper->getStorePhone() ?? '');
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail() ?? '');
 
             if (empty($destPostcode) || empty($destCountryId) || empty($destCity) || empty($fullAddressProcessed['street']) || empty($fullAddressProcessed['suburb'])) {
                 $this->_logger->debug("Mienviorates@collectRates :: empty required address fields are present, ignoring");

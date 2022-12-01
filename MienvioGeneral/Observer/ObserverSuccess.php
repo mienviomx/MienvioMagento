@@ -139,9 +139,9 @@ class ObserverSuccess implements ObserverInterface
             $countryId = $shippingAddress->getCountryId();
             $destRegion     = $shippingAddress->getRegion();
             $destRegionCode = $shippingAddress->getRegionCode();
-            $storeName = trim($this->_mienvioHelper->getStoreName());
-            $storePhone = trim($this->_mienvioHelper->getStorePhone());
-            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+            $storeName = trim($this->_mienvioHelper->getStoreName() ?? '');
+            $storePhone = trim($this->_mienvioHelper->getStorePhone() ?? '');
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail() ?? '');
 
             if ($shippingAddress === null) {
                 $this->_logger->debug('ObserverSuccess@execute :: shipping address is null, returning');
@@ -730,9 +730,9 @@ class ObserverSuccess implements ObserverInterface
                 return $this;
             }
 
-            $storeName = trim($this->_mienvioHelper->getStoreName());
-            $storePhone = trim($this->_mienvioHelper->getStorePhone());
-            $storeEmail = trim($this->_mienvioHelper->getStoreEmail());
+            $storeName = trim($this->_mienvioHelper->getStoreName() ?? '');
+            $storePhone = trim($this->_mienvioHelper->getStorePhone() ?? '');
+            $storeEmail = trim($this->_mienvioHelper->getStoreEmail() ?? '');
 
             $fromData = $this->createAddressDataStr(
                 'from',
