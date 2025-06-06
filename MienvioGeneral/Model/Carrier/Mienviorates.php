@@ -989,8 +989,8 @@ class Mienviorates extends AbstractCarrier implements CarrierInterface
 
     private function initLogger()
     {
-        $writer = new \Zend_Log_Writer_Stream(BP . '/var/log/mienvioRates.log');
-        $logger = new \Zend_Log();
+        $writer = new \Laminas\Log\Writer\Stream(BP . '/var/log/mienvioRates.log');
+        $logger = new \Laminas\Log\Logger();
         $logger->addWriter($writer);
         $this->_logger = $logger;
     }

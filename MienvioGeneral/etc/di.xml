@@ -7,4 +7,9 @@
             </argument>
         </arguments>
     </virtualType>
+    <!-- Plugin para guardar campos personalizados en la dirección de envío -->
+    <type name="Magento\Checkout\Model\ShippingInformationManagement">
+        <plugin name="mienvio-shipping-fields"
+                type="MienvioMagento\MienvioGeneral\Plugin\Checkout\ShippingInformationManagementPlugin" />
+    </type>
 </config>

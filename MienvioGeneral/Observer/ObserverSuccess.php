@@ -6,6 +6,7 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Quote\Model\ResourceModel\Quote\Address\Rate\CollectionFactory;
 use Magento\Quote\Model\QuoteRepository;
+use MienvioMagento\MienvioGeneral\Helper\AddressStreetHandler;
 use Psr\Log\LoggerInterface;
 use MienvioMagento\MienvioGeneral\Helper\Data as Helper;
 
@@ -38,6 +39,42 @@ class ObserverSuccess implements ObserverInterface
         $this->_logger = $logger;
         $this->_mienvioHelper = $helperData;
         $this->_curl = $curl;
+    }
+
+    protected function getStreet1($shippingAddress){
+        $street1 = $shippingAddress->getStreetLine(1);
+        $street2 = $shippingAddress->getStreetLine(2);
+        $finalStreet1 = '';
+        if (!empty($street1)) {
+            $finalStreet1 = $street1;
+        }
+        if (!empty($street2)) {
+            $finalStreet1 = "{$street1} {$street2}";
+        }
+
+        if (strlen($finalStreet1) > 35) {
+            $finalStreet1 = substr($finalStreet1, 0, 35);
+        }
+        
+        return $street1;
+    }
+
+    protected function getStreet2($shippingAddress){
+        $street1 = $shippingAddress->getStreetLine(1);
+        $street2 = $shippingAddress->getStreetLine(2);
+        $finalStreet1 = '';
+        if (!empty($street1)) {
+            $finalStreet1 = $street1;
+        }
+        if (!empty($street2)) {
+            $finalStreet1 = "{$street1} {$street2}";
+        }
+
+        if (strlen($finalStreet1) > 35) {
+            $finalStreet1 = substr($finalStreet1, 0, 35);
+        }
+        
+        return $street1;
     }
 
     public function execute(Observer $observer)
@@ -165,18 +202,26 @@ class ObserverSuccess implements ObserverInterface
             $customermail  = $shippingAddress->getEmail();
             $customerPhone = $shippingAddress->getTelephone();
             $countryId     = $shippingAddress->getCountryId();
+            $neighborhood = $shippingAddress->getNeighborhood();
+            $references = $shippingAddress->getReferences();
+            $this->_logger->debug('Observer Neighborhood: ' . $neighborhood . ', References: ' . $references);
 
-            $toStreet2 = empty($shippingAddress->getStreetLine(2)) ? $shippingAddress->getStreetLine(1) : $shippingAddress->getStreetLine(2);
-
+            $addressHelper = new AddressStreetHandler(
+                $shippingAddress->getStreetLine(1),
+                $shippingAddress->getStreetLine(2),
+                $shippingAddress->getStreetLine(3),
+                $neighborhood,
+                $references
+            );
             $toData = $this->createAddressDataStr(
                 'to',
                 $customerName,
-                $shippingAddress->getStreetLine(1),
-                $toStreet2,
+                $addressHelper->getMienvioStreet1(),
+                $addressHelper->getMienvioStreet2(),
                 $shippingAddress->getPostcode(),
                 $customermail,
                 $customerPhone,
-                $shippingAddress->getStreetLine(3),
+                $addressHelper->getMienvioReferences(),
                 $countryId,
                 $destRegion,
                 $destRegionCode,
