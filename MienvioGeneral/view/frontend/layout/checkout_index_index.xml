@@ -22,46 +22,31 @@
                                                         </item>
                                                     </item>
                                                 </item>
-                                                <!-- Campos de dirección personalizados -->
+                                                <!-- Campo extra de street (línea 5) -->
                                                 <item name="shippingAddress" xsi:type="array">
                                                     <item name="children" xsi:type="array">
                                                         <item name="shipping-address-fieldset" xsi:type="array">
                                                             <item name="children" xsi:type="array">
-                                                                <!-- Campo Colonia -->
-                                                                <item name="neighborhood" xsi:type="array">
-                                                                    <item name="component" xsi:type="string">MienvioMagento_MienvioGeneral/js/form/element/custominput</item>
+                                                                <item name="street_4" xsi:type="array">
+                                                                    <item name="component" xsi:type="string">Magento_Ui/js/form/element/abstract</item>
                                                                     <item name="config" xsi:type="array">
                                                                         <item name="customScope" xsi:type="string">shippingAddress</item>
                                                                         <item name="template" xsi:type="string">ui/form/field</item>
+                                                                        <item name="elementTmpl" xsi:type="string">ui/form/element/input</item>
                                                                     </item>
-                                                                    <item name="dataScope" xsi:type="string">shippingAddress.extension_attributes.neighborhood</item>
-                                                                    <item name="label" xsi:type="string">Colonia</item>
+                                                                    <item name="dataScope" xsi:type="string">shippingAddress.street.4</item>
+                                                                    <item name="label" xsi:type="string">Calle (línea 5)</item>
                                                                     <item name="provider" xsi:type="string">checkoutProvider</item>
                                                                     <item name="visible" xsi:type="boolean">true</item>
                                                                     <item name="validation" xsi:type="array"/>
-                                                                    <item name="sortOrder" xsi:type="string">68</item>
-                                                                    <item name="additionalClasses" xsi:type="string"></item>
-                                                                </item>
-                                                                <!-- Campo Referencias -->
-                                                                <item name="references" xsi:type="array">
-                                                                    <item name="component" xsi:type="string">MienvioMagento_MienvioGeneral/js/form/element/custominput</item>
-                                                                    <item name="config" xsi:type="array">
-                                                                        <item name="customScope" xsi:type="string">shippingAddress</item>
-                                                                        <item name="template" xsi:type="string">ui/form/field</item>
-                                                                    </item>
-                                                                    <item name="dataScope" xsi:type="string">shippingAddress.extension_attributes.references</item>
-                                                                    <item name="label" xsi:type="string">Referencias</item>
-                                                                    <item name="provider" xsi:type="string">checkoutProvider</item>
-                                                                    <item name="visible" xsi:type="boolean">true</item>
-                                                                    <item name="validation" xsi:type="array"/>
-                                                                    <item name="sortOrder" xsi:type="string">69</item>
+                                                                    <item name="sortOrder" xsi:type="string">75</item>
                                                                     <item name="additionalClasses" xsi:type="string"></item>
                                                                 </item>
                                                             </item>
                                                         </item>
                                                     </item>
                                                 </item>
-                                                <!-- Fin campos personalizados -->
+                                                <!-- Fin campo extra de street -->
                                             </item>
                                         </item>
                                     </item>

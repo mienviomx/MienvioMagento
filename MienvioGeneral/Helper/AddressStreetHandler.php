@@ -156,8 +156,35 @@ class AddressStreetHandler
         }
     }
 
+
+    protected function numberOfFieldsReceived(){
+        $numberOfFields = 0;
+        if (!empty($this->streetLine1)) {
+            $numberOfFields++;
+        }
+        if (!empty($this->streetLine2)) {
+            $numberOfFields++;
+        }
+        if (!empty($this->streetLine3)) {
+            $numberOfFields++;
+        }
+        if (!empty($this->neighborhood)) {
+            $numberOfFields++;
+        }
+        if (!empty($this->references)) {
+            $numberOfFields++;
+        }
+
+        return $numberOfFields;
+    }
+
     protected function formatAddress()
     {
-        $this->fiveFieldsFormat();
+        if($this->numberOfFieldsReceived() === 5){
+            $this->fiveFieldsFormat();
+            return;
+        }
+
+        $this->threeFieldsFormat();
     }
 }

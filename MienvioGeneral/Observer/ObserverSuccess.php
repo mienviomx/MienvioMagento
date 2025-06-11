@@ -202,17 +202,15 @@ class ObserverSuccess implements ObserverInterface
             $customermail  = $shippingAddress->getEmail();
             $customerPhone = $shippingAddress->getTelephone();
             $countryId     = $shippingAddress->getCountryId();
-            $neighborhood = $shippingAddress->getNeighborhood();
-            $references = $shippingAddress->getReferences();
-            $this->_logger->debug('Observer Neighborhood: ' . $neighborhood . ', References: ' . $references);
 
             $addressHelper = new AddressStreetHandler(
                 $shippingAddress->getStreetLine(1),
                 $shippingAddress->getStreetLine(2),
                 $shippingAddress->getStreetLine(3),
-                $neighborhood,
-                $references
+                $shippingAddress->getStreetLine(4) ? $shippingAddress->getStreetLine(4) : null,
+                $shippingAddress->getStreetLine(5) ? $shippingAddress->getStreetLine(5) : null
             );
+
             $toData = $this->createAddressDataStr(
                 'to',
                 $customerName,
@@ -799,17 +797,23 @@ class ObserverSuccess implements ObserverInterface
             $customerPhone = $shippingAddress->getTelephone();
             $countryId     = $shippingAddress->getCountryId();
 
-            $toStreet2 = empty($shippingAddress->getStreetLine(2)) ? $shippingAddress->getStreetLine(1) : $shippingAddress->getStreetLine(2);
+            $addressHelper = new AddressStreetHandler(
+                $shippingAddress->getStreetLine(1),
+                $shippingAddress->getStreetLine(2),
+                $shippingAddress->getStreetLine(3),
+                $shippingAddress->getStreetLine(4) ? $shippingAddress->getStreetLine(4) : null,
+                $shippingAddress->getStreetLine(5) ? $shippingAddress->getStreetLine(5) : null
+            );
 
             $toData = $this->createAddressDataStr(
                 'to',
                 $customerName,
-                $shippingAddress->getStreetLine(1),
-                $toStreet2,
+                $addressHelper->getMienvioStreet1(),
+                $addressHelper->getMienvioStreet2(),
                 $shippingAddress->getPostcode(),
                 $customermail,
                 $customerPhone,
-                $shippingAddress->getStreetLine(3),
+                $addressHelper->getMienvioReferences(),
                 $countryId,
                 '',
                 '',
