@@ -41,42 +41,6 @@ class ObserverSuccess implements ObserverInterface
         $this->_curl = $curl;
     }
 
-    protected function getStreet1($shippingAddress){
-        $street1 = $shippingAddress->getStreetLine(1);
-        $street2 = $shippingAddress->getStreetLine(2);
-        $finalStreet1 = '';
-        if (!empty($street1)) {
-            $finalStreet1 = $street1;
-        }
-        if (!empty($street2)) {
-            $finalStreet1 = "{$street1} {$street2}";
-        }
-
-        if (strlen($finalStreet1) > 35) {
-            $finalStreet1 = substr($finalStreet1, 0, 35);
-        }
-        
-        return $street1;
-    }
-
-    protected function getStreet2($shippingAddress){
-        $street1 = $shippingAddress->getStreetLine(1);
-        $street2 = $shippingAddress->getStreetLine(2);
-        $finalStreet1 = '';
-        if (!empty($street1)) {
-            $finalStreet1 = $street1;
-        }
-        if (!empty($street2)) {
-            $finalStreet1 = "{$street1} {$street2}";
-        }
-
-        if (strlen($finalStreet1) > 35) {
-            $finalStreet1 = substr($finalStreet1, 0, 35);
-        }
-        
-        return $street1;
-    }
-
     public function execute(Observer $observer)
     {
         $this->initLogger();
@@ -204,10 +168,10 @@ class ObserverSuccess implements ObserverInterface
             $countryId     = $shippingAddress->getCountryId();
 
             $addressHelper = new AddressStreetHandler(
-                $shippingAddress->getStreetLine(1),
                 $shippingAddress->getStreetLine(2),
                 $shippingAddress->getStreetLine(3),
-                $shippingAddress->getStreetLine(4) ? $shippingAddress->getStreetLine(4) : null,
+                $shippingAddress->getStreetLine(4),
+                $shippingAddress->getStreetLine(1) ? $shippingAddress->getStreetLine(1) : null,
                 $shippingAddress->getStreetLine(5) ? $shippingAddress->getStreetLine(5) : null
             );
 
@@ -798,10 +762,10 @@ class ObserverSuccess implements ObserverInterface
             $countryId     = $shippingAddress->getCountryId();
 
             $addressHelper = new AddressStreetHandler(
-                $shippingAddress->getStreetLine(1),
                 $shippingAddress->getStreetLine(2),
                 $shippingAddress->getStreetLine(3),
-                $shippingAddress->getStreetLine(4) ? $shippingAddress->getStreetLine(4) : null,
+                $shippingAddress->getStreetLine(4),
+                $shippingAddress->getStreetLine(1) ? $shippingAddress->getStreetLine(1) : null,
                 $shippingAddress->getStreetLine(5) ? $shippingAddress->getStreetLine(5) : null
             );
 
